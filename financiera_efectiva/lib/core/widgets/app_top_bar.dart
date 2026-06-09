@@ -53,7 +53,7 @@ class AppTopBar extends StatelessWidget implements PreferredSizeWidget {
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.savings),
                 title: Text('Movimiento registrado'),
-                subtitle: Text('Se actualizo tu historial financiero.'),
+                subtitle: Text('Se actualizó tu historial financiero.'),
               ),
             ],
           ),

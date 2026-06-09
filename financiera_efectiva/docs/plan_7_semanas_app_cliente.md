@@ -24,7 +24,7 @@
 
 ## Semana 4 - Modulos financieros centrales
 
-- Ahorros: saldo, depositos y estados de cuenta.
+- Ahorros: saldo, depósitos y estados de cuenta.
 - Créditos: préstamos activos, cuotas pendientes y cronograma.
 
 ## Semana 5 - Operaciones y formularios
@@ -34,7 +34,7 @@
 - Confirmación de operación.
 - Historial.
 
-## Semana 6 - Perfil y configuracion
+## Semana 6 - Perfil y configuración
 
 - Perfil editable.
 - Configuración.

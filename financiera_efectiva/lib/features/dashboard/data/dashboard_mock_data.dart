@@ -12,7 +12,7 @@ class DashboardMockData {
 
   static const movements = [
     Movement(
-      title: 'Deposito cuenta de ahorro',
+      title: 'Depósito cuenta de ahorro',
       date: '19/05/2026',
       amount: 250000,
       isIncome: true,

@@ -71,7 +71,7 @@ class _SecurityScreenState extends State<SecurityScreen> {
               _biometricEnabled = value;
             }),
             title: const Text('Acceso biométrico'),
-            subtitle: const Text('Preparado para integracion futura'),
+            subtitle: const Text('Preparado para integración futura'),
           ),
           const SizedBox(height: 16),
           Text(

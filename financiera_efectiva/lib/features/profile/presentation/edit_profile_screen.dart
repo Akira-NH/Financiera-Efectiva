@@ -15,7 +15,7 @@ class EditProfileScreen extends StatelessWidget {
         children: [
           const AppTextField(label: 'Nombre completo'),
           const SizedBox(height: 16),
-          const AppTextField(label: 'Telefono'),
+          const AppTextField(label: 'Teléfono'),
           const SizedBox(height: 16),
           const AppTextField(label: 'Correo'),
           const SizedBox(height: 24),
