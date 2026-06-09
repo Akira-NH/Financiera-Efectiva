@@ -135,7 +135,7 @@ class _LoginBackground extends StatelessWidget {
   }
 }
 
-class _LoginForm extends StatelessWidget {
+class _LoginForm extends StatefulWidget {
   const _LoginForm({
     required this.formKey,
     required this.emailController,
@@ -151,13 +151,20 @@ class _LoginForm extends StatelessWidget {
   final VoidCallback? onLogin;
 
   @override
+  State<_LoginForm> createState() => _LoginFormState();
+}
+
+class _LoginFormState extends State<_LoginForm> {
+  bool _obscurePassword = true;
+
+  @override
   Widget build(BuildContext context) {
     return Material(
       color: AppColors.primary,
       borderRadius: BorderRadius.circular(18),
       clipBehavior: Clip.antiAlias,
       child: Form(
-        key: formKey,
+        key: widget.formKey,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 30, 24, 24),
           child: Column(
@@ -170,7 +177,7 @@ class _LoginForm extends StatelessWidget {
               AppTextField(
                 label: '',
                 hint: 'Ingresa tu correo Gmail',
-                controller: emailController,
+                controller: widget.emailController,
                 keyboardType: TextInputType.emailAddress,
                 validator: Validators.email,
               ),
@@ -179,15 +186,28 @@ class _LoginForm extends StatelessWidget {
               AppTextField(
                 label: '',
                 hint: 'Ingresa tu contraseña',
-                controller: passwordController,
-                obscureText: true,
+                controller: widget.passwordController,
+                obscureText: _obscurePassword,
+                suffixIcon: IconButton(
+                  tooltip: _obscurePassword
+                      ? 'Mostrar contraseña'
+                      : 'Ocultar contraseña',
+                  onPressed: () {
+                    setState(() => _obscurePassword = !_obscurePassword);
+                  },
+                  icon: Icon(
+                    _obscurePassword
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                  ),
+                ),
                 validator: Validators.password,
               ),
               const SizedBox(height: 14),
               AppButton(
-                label: isLoading ? 'Ingresando...' : 'Continuar',
+                label: widget.isLoading ? 'Ingresando...' : 'Continuar',
                 icon: Icons.arrow_forward,
-                onPressed: isLoading ? null : onLogin,
+                onPressed: widget.isLoading ? null : widget.onLogin,
               ),
               const SizedBox(height: 8),
               TextButton(
@@ -195,7 +215,7 @@ class _LoginForm extends StatelessWidget {
                   Navigator.pushNamed(context, RouteNames.forgotPassword);
                 },
                 child: const Text(
-                  'Olvidaste tu contraseña?',
+                  '¿Olvidaste tu contraseña?',
                   style: TextStyle(color: Colors.white),
                 ),
               ),
