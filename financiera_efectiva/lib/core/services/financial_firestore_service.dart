@@ -82,6 +82,7 @@ class FinancialFirestoreService {
         transaction.set(clientRef, {
           'totalBalance': initialBalance,
           'savingsBalance': initialBalance,
+          'piggyBankBalance': 0,
           'activeLoansBalance': 0,
           'financialProfileSeeded': true,
           'createdAt': FieldValue.serverTimestamp(),
@@ -104,6 +105,9 @@ class FinancialFirestoreService {
         if (!data.containsKey('activeLoansBalance')) {
           updates['activeLoansBalance'] = 0;
         }
+        if (!data.containsKey('piggyBankBalance')) {
+          updates['piggyBankBalance'] = 0;
+        }
         if (!hasSeededProfile) {
           updates['financialProfileSeeded'] = true;
         }
@@ -114,6 +118,7 @@ class FinancialFirestoreService {
         transaction.set(savingsRef, {
           'number': 'AHO-${clientId.substring(0, 6).toUpperCase()}',
           'balance': initialBalance,
+          'piggyBankBalance': 0,
           'status': 'Activa',
           'createdAt': FieldValue.serverTimestamp(),
         });
@@ -126,6 +131,9 @@ class FinancialFirestoreService {
         final balance = savingsData['balance'] as num?;
         if (!hasSeededProfile && (balance == null || balance == 0)) {
           transaction.update(savingsRef, {'balance': initialBalance});
+        }
+        if (!savingsData.containsKey('piggyBankBalance')) {
+          transaction.update(savingsRef, {'piggyBankBalance': 0});
         }
       }
     });
@@ -199,7 +207,127 @@ class FinancialFirestoreService {
       number: data['number'] as String? ?? '',
       balance: data['balance'] as num? ?? initialBalance,
       status: data['status'] as String? ?? 'Activa',
+      piggyBankBalance: data['piggyBankBalance'] as num? ?? 0,
     );
+  }
+
+  Future<SavingsAccount> transferToPiggyBank(num amount) {
+    return _movePiggyBankMoney(
+      amount: amount,
+      direction: _PiggyBankDirection.deposit,
+    );
+  }
+
+  Future<SavingsAccount> withdrawFromPiggyBank(num amount) {
+    return _movePiggyBankMoney(
+      amount: amount,
+      direction: _PiggyBankDirection.withdraw,
+    );
+  }
+
+  Future<SavingsAccount> _movePiggyBankMoney({
+    required num amount,
+    required _PiggyBankDirection direction,
+  }) async {
+    final firestore = _firestore;
+    if (amount <= 0) {
+      throw const AppException('El monto debe ser mayor a cero.');
+    }
+    if (firestore == null) {
+      throw const AppException('No se pudo conectar con la base de datos.');
+    }
+
+    await ensureClientFinancialProfile();
+
+    final clientRef = firestore.collection('clients').doc(_clientId);
+    final savingsRef = clientRef.collection('savings').doc('main');
+    final operationRef = clientRef.collection('operations').doc();
+    final movementRef = clientRef.collection('movements').doc();
+    final depositRef = clientRef.collection('deposits').doc();
+
+    return firestore.runTransaction((transaction) async {
+      final clientDoc = await transaction.get(clientRef);
+      final savingsDoc = await transaction.get(savingsRef);
+      final clientData = clientDoc.data() ?? {};
+      final savingsData = savingsDoc.data() ?? {};
+      final availableBalance =
+          savingsData['balance'] as num? ??
+          clientData['savingsBalance'] as num? ??
+          initialBalance;
+      final piggyBankBalance =
+          savingsData['piggyBankBalance'] as num? ??
+          clientData['piggyBankBalance'] as num? ??
+          0;
+
+      if (direction == _PiggyBankDirection.deposit &&
+          availableBalance < amount) {
+        throw const AppException(
+          'Saldo disponible insuficiente para depositar en la alcancía.',
+        );
+      }
+      if (direction == _PiggyBankDirection.withdraw &&
+          piggyBankBalance < amount) {
+        throw const AppException(
+          'Saldo insuficiente en la alcancía para retirar.',
+        );
+      }
+
+      final newAvailableBalance = direction == _PiggyBankDirection.deposit
+          ? availableBalance - amount
+          : availableBalance + amount;
+      final newPiggyBankBalance = direction == _PiggyBankDirection.deposit
+          ? piggyBankBalance + amount
+          : piggyBankBalance - amount;
+      final totalBalance = newAvailableBalance + newPiggyBankBalance;
+      final operationTitle = direction == _PiggyBankDirection.deposit
+          ? 'Depósito a alcancía'
+          : 'Retiro de alcancía';
+
+      transaction.set(clientRef, {
+        'totalBalance': totalBalance,
+        'savingsBalance': newAvailableBalance,
+        'piggyBankBalance': newPiggyBankBalance,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      transaction.set(savingsRef, {
+        'number': savingsData['number'] as String? ??
+            'AHO-${_clientId.substring(0, 6).toUpperCase()}',
+        'balance': newAvailableBalance,
+        'piggyBankBalance': newPiggyBankBalance,
+        'status': savingsData['status'] as String? ?? 'Activa',
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      transaction.set(operationRef, {
+        'type': operationTitle,
+        'amount': amount,
+        'status': 'Exitosa',
+        'date': _today,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      transaction.set(movementRef, {
+        'title': operationTitle,
+        'amount': amount,
+        'date': _today,
+        'isIncome': direction == _PiggyBankDirection.withdraw,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      transaction.set(depositRef, {
+        'amount': amount,
+        'date': _today,
+        'reference': direction == _PiggyBankDirection.deposit
+            ? 'ALC-DEP'
+            : 'ALC-RET',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      return SavingsAccount(
+        number: savingsData['number'] as String? ??
+            'AHO-${_clientId.substring(0, 6).toUpperCase()}',
+        balance: newAvailableBalance,
+        piggyBankBalance: newPiggyBankBalance,
+        status: savingsData['status'] as String? ?? 'Activa',
+      );
+    });
   }
 
   Future<List<Deposit>> getDeposits() async {
@@ -581,3 +709,5 @@ class FinancialFirestoreService {
     });
   }
 }
+
+enum _PiggyBankDirection { deposit, withdraw }
