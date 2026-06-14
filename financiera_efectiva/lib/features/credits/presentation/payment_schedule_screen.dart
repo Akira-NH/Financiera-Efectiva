@@ -9,7 +9,7 @@ class PaymentScheduleScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Cronograma')),
+      appBar: AppBar(title: const Text('Cronograma de pagos')),
       body: FutureBuilder(
         future: FinancialFirestoreService.instance.getInstallments(),
         builder: (context, snapshot) {
@@ -45,8 +45,15 @@ class PaymentScheduleScreen extends StatelessWidget {
                   color: installment.isPaid ? Colors.green : Colors.orange,
                 ),
                 title: Text('Cuota ${installment.number}'),
-                subtitle: Text('Vence: ${installment.dueDate}'),
-                trailing: Text(Formatters.currency(installment.amount)),
+                subtitle: Text(
+                  installment.isPaid
+                      ? 'Pagada'
+                      : 'Vence: ${installment.dueDate}',
+                ),
+                trailing: Text(
+                  Formatters.currency(installment.amount),
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
               );
             },
           );

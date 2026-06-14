@@ -4,10 +4,10 @@ import '../../../app/routes/route_names.dart';
 import '../../../core/services/financial_firestore_service.dart';
 import '../../../core/widgets/app_top_bar.dart';
 import '../../credits/presentation/credits_screen.dart';
-import '../domain/entities/financial_summary.dart';
-import '../domain/entities/movement.dart';
 import '../../operations/presentation/operation_history_screen.dart';
 import '../../operations/presentation/operation_menu_screen.dart';
+import '../domain/entities/financial_summary.dart';
+import '../domain/entities/movement.dart';
 import 'widgets/balance_card.dart';
 import 'widgets/movement_list.dart';
 import 'widgets/product_summary_card.dart';
@@ -21,23 +21,25 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   int _currentIndex = 0;
-
-  final _pages = const [
-    _DashboardHome(),
-    OperationMenuScreen(),
-    CreditsScreen(showAppBar: false),
-    OperationHistoryScreen(showAppBar: false),
-  ];
+  int _refreshToken = 0;
 
   @override
   Widget build(BuildContext context) {
+    final pages = [
+      _DashboardHome(refreshToken: _refreshToken),
+      const OperationMenuScreen(),
+      const CreditsScreen(showAppBar: false),
+      OperationHistoryScreen(showAppBar: false, refreshToken: _refreshToken),
+    ];
+
     return Scaffold(
       appBar: const AppTopBar(),
-      body: IndexedStack(index: _currentIndex, children: _pages),
+      body: IndexedStack(index: _currentIndex, children: pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) => setState(() {
           _currentIndex = index;
+          _refreshToken++;
         }),
         destinations: const [
           NavigationDestination(
@@ -66,7 +68,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 }
 
 class _DashboardHome extends StatefulWidget {
-  const _DashboardHome();
+  const _DashboardHome({required this.refreshToken});
+
+  final int refreshToken;
 
   @override
   State<_DashboardHome> createState() => _DashboardHomeState();
@@ -79,6 +83,14 @@ class _DashboardHomeState extends State<_DashboardHome> {
   void initState() {
     super.initState();
     _homeFuture = _loadHomeData();
+  }
+
+  @override
+  void didUpdateWidget(covariant _DashboardHome oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshToken != widget.refreshToken) {
+      _homeFuture = _loadHomeData();
+    }
   }
 
   Future<_DashboardHomeData> _loadHomeData() async {
@@ -101,87 +113,93 @@ class _DashboardHomeState extends State<_DashboardHome> {
     return FutureBuilder<_DashboardHomeData>(
       future: _homeFuture,
       builder: (context, snapshot) {
-        return ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            if (snapshot.hasError)
-              _InlineLoadError(
-                message: 'No se pudo cargar la información de inicio.',
-                error: snapshot.error,
-              )
-            else if (!snapshot.hasData)
-              const SizedBox(
-                height: 96,
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else
-              BalanceCard(
-                title: 'Saldo general',
-                amount: snapshot.data!.summary.totalBalance,
-                icon: Icons.account_balance_wallet,
-              ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: ProductSummaryCard(
-                    title: 'Ahorros',
-                    subtitle: 'Saldo y estados',
-                    icon: Icons.savings,
-                    onTap: () =>
-                        Navigator.pushNamed(context, RouteNames.savings),
-                  ),
+        return RefreshIndicator(
+          onRefresh: () async {
+            setState(() => _homeFuture = _loadHomeData());
+            await _homeFuture;
+          },
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              if (snapshot.hasError)
+                _InlineLoadError(
+                  message: 'No se pudo cargar la información de inicio.',
+                  error: snapshot.error,
+                )
+              else if (!snapshot.hasData)
+                const SizedBox(
+                  height: 96,
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else
+                BalanceCard(
+                  title: 'Saldo general',
+                  amount: snapshot.data!.summary.totalBalance,
+                  icon: Icons.account_balance_wallet,
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ProductSummaryCard(
-                    title: 'Créditos',
-                    subtitle: 'Cuotas y cronograma',
-                    icon: Icons.credit_score,
-                    onTap: () =>
-                        Navigator.pushNamed(context, RouteNames.credits),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: ProductSummaryCard(
+                      title: 'Ahorros',
+                      subtitle: 'Saldo y estados',
+                      icon: Icons.savings,
+                      onTap: () =>
+                          Navigator.pushNamed(context, RouteNames.savings),
+                    ),
                   ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ProductSummaryCard(
+                      title: 'Créditos',
+                      subtitle: 'Cuotas y cronograma',
+                      icon: Icons.credit_score,
+                      onTap: () =>
+                          Navigator.pushNamed(context, RouteNames.credits),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              ExpansionTile(
+                initiallyExpanded: true,
+                tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
                 ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            ExpansionTile(
-              initiallyExpanded: true,
-              tilePadding: const EdgeInsets.symmetric(horizontal: 16),
-              childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+                collapsedShape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                backgroundColor: Theme.of(context).cardTheme.color,
+                collapsedBackgroundColor: Theme.of(context).cardTheme.color,
+                title: Text(
+                  'Últimos movimientos',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                children: [
+                  if (snapshot.hasError)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: Text('No se pudieron cargar los movimientos.'),
+                    )
+                  else if (!snapshot.hasData)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (snapshot.data!.movements.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: Text('Aún no tienes movimientos.'),
+                    )
+                  else
+                    MovementList(movements: snapshot.data!.movements),
+                ],
               ),
-              collapsedShape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              backgroundColor: Theme.of(context).cardTheme.color,
-              collapsedBackgroundColor: Theme.of(context).cardTheme.color,
-              title: Text(
-                'Últimos movimientos',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              children: [
-                if (snapshot.hasError)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child: Text('No se pudieron cargar los movimientos.'),
-                  )
-                else if (!snapshot.hasData)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                else if (snapshot.data!.movements.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child: Text('Aún no tienes movimientos.'),
-                  )
-                else
-                  MovementList(movements: snapshot.data!.movements),
-              ],
-            ),
-          ],
+            ],
+          ),
         );
       },
     );

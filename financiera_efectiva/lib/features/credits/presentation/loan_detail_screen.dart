@@ -28,22 +28,56 @@ class LoanDetailScreen extends StatelessWidget {
           }
 
           final loan = snapshot.data!;
-          return Padding(
+          return ListView(
             padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Crédito ${loan.id}'),
-                const SizedBox(height: 8),
-                Text('Monto inicial: ${Formatters.currency(loan.amount)}'),
-                Text(
-                  'Saldo pendiente: ${Formatters.currency(loan.pendingBalance)}',
+            children: [
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Crédito ${loan.id}',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 12),
+                      _DetailRow(
+                        label: 'Monto inicial',
+                        value: Formatters.currency(loan.amount),
+                      ),
+                      _DetailRow(
+                        label: 'Saldo pendiente',
+                        value: Formatters.currency(loan.pendingBalance),
+                      ),
+                      _DetailRow(label: 'Estado', value: loan.status),
+                    ],
+                  ),
                 ),
-                Text('Estado: ${loan.status}'),
-              ],
-            ),
+              ),
+            ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  const _DetailRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Expanded(child: Text(label)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w800)),
+        ],
       ),
     );
   }

@@ -6,9 +6,14 @@ import '../../../core/widgets/app_top_bar.dart';
 import '../domain/entities/operation_history_item.dart';
 
 class OperationHistoryScreen extends StatefulWidget {
-  const OperationHistoryScreen({this.showAppBar = true, super.key});
+  const OperationHistoryScreen({
+    this.showAppBar = true,
+    this.refreshToken = 0,
+    super.key,
+  });
 
   final bool showAppBar;
+  final int refreshToken;
 
   @override
   State<OperationHistoryScreen> createState() => _OperationHistoryScreenState();
@@ -22,6 +27,16 @@ class _OperationHistoryScreenState extends State<OperationHistoryScreen> {
   void initState() {
     super.initState();
     _historyFuture = FinancialFirestoreService.instance.getOperations();
+  }
+
+  @override
+  void didUpdateWidget(covariant OperationHistoryScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshToken != widget.refreshToken) {
+      setState(() {
+        _historyFuture = FinancialFirestoreService.instance.getOperations();
+      });
+    }
   }
 
   @override
@@ -42,7 +57,10 @@ class _OperationHistoryScreenState extends State<OperationHistoryScreen> {
           final history = snapshot.data!;
           final filtered = _filter == 'Todas'
               ? history
-              : history.where((item) => item.type == _filter).toList();
+              : history.where((item) {
+                  if (_filter == 'Pago') return item.type.startsWith('Pago');
+                  return item.type == _filter;
+                }).toList();
 
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -122,7 +140,7 @@ class _HistoryTile extends StatelessWidget {
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: Icon(
-        item.type == 'Pago' ? Icons.payments : Icons.swap_horiz,
+        item.type.startsWith('Pago') ? Icons.payments : Icons.swap_horiz,
         color: Theme.of(context).colorScheme.primary,
       ),
       title: Text(item.type),

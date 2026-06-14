@@ -7,11 +7,14 @@ class CreditRequest {
   final String status;
 
   factory CreditRequest.fromJson(Map<String, Object?> json) {
+    final rawAmount = json['monto'] ?? json['amountLabel'] ?? json['amount'];
     return CreditRequest(
       json['cliente'] as String? ?? '',
-      json['monto'] as String? ?? '',
+      rawAmount is num
+          ? 'S/ ${rawAmount.toStringAsFixed(2)}'
+          : rawAmount as String? ?? '',
       json['segmento'] as String? ?? '',
-      json['estado'] as String? ?? '',
+      json['estado'] as String? ?? json['status'] as String? ?? '',
     );
   }
 

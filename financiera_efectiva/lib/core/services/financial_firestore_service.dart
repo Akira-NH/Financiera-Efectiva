@@ -10,6 +10,7 @@ import '../../features/dashboard/domain/entities/movement.dart';
 import '../../features/operations/data/operations_mock_data.dart';
 import '../../features/operations/domain/entities/operation_history_item.dart';
 import '../../features/operations/domain/entities/operation_contact.dart';
+import '../../features/operations/domain/entities/service_bill.dart';
 import '../../features/savings/data/savings_mock_data.dart';
 import '../../features/savings/domain/entities/account_statement.dart';
 import '../../features/savings/domain/entities/deposit.dart';
@@ -422,6 +423,108 @@ class FinancialFirestoreService {
     }).toList();
   }
 
+  Future<void> submitCreditRequest({
+    required num amount,
+    required int termMonths,
+    required String purpose,
+  }) async {
+    final firestore = _firestore;
+    if (amount <= 0) {
+      throw const AppException('El monto debe ser mayor a cero.');
+    }
+    if (termMonths <= 0) {
+      throw const AppException('Selecciona un plazo válido.');
+    }
+    if (firestore == null) {
+      throw const AppException('No se pudo conectar con la base de datos.');
+    }
+
+    await ensureClientFinancialProfile();
+
+    final clientRef = firestore.collection('clients').doc(_clientId);
+    final clientDoc = await clientRef.get();
+    final clientData = clientDoc.data() ?? {};
+    final localClient = ClientDatabaseService.instance.currentClient;
+    final currentUser = FirebaseAuthService.instance.currentUser;
+    final fullName =
+        clientData['fullName'] as String? ??
+        currentUser?.displayName ??
+        localClient?.fullName ??
+        'Cliente';
+    final documentNumber =
+        clientData['documentNumber'] as String? ??
+        localClient?.documentNumber ??
+        _clientId;
+    final phone =
+        clientData['phone'] as String? ?? localClient?.phone ?? '';
+    final email =
+        clientData['email'] as String? ??
+        currentUser?.email ??
+        localClient?.email ??
+        '';
+    final requestRef = clientRef.collection('creditRequests').doc();
+    final salesRequestRef = firestore
+        .collection('sales_credit_requests')
+        .doc(requestRef.id);
+    final salesClientRef = firestore
+        .collection('sales_clients')
+        .doc(documentNumber);
+    final amountLabel = 'S/ ${amount.toStringAsFixed(2)}';
+    final cleanPurpose = purpose.trim();
+
+    final batch = firestore.batch();
+    batch.set(requestRef, {
+      'id': requestRef.id,
+      'clientId': _clientId,
+      'clientName': fullName,
+      'documentNumber': documentNumber,
+      'email': email,
+      'phone': phone,
+      'amount': amount,
+      'amountLabel': amountLabel,
+      'termMonths': termMonths,
+      'purpose': cleanPurpose,
+      'status': 'Preaprobado',
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    batch.set(salesRequestRef, {
+      'cliente': fullName,
+      'monto': amountLabel,
+      'segmento': 'POR EVALUAR',
+      'estado': 'Preaprobado',
+      'clientId': _clientId,
+      'dni': documentNumber,
+      'telefono': phone,
+      'correo': email,
+      'plazo_meses': termMonths,
+      'destino_credito': cleanPurpose,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    batch.set(salesClientRef, {
+      'dni': documentNumber,
+      'nombres': fullName,
+      'telefono': phone,
+      'ubicacion': clientData['location'] as String? ?? '',
+      'edad': clientData['age'] as int? ?? 0,
+      'negocio': clientData['businessName'] as String? ?? 'Por registrar',
+      'rubro': clientData['businessType'] as String? ?? 'Por evaluar',
+      'antiguedad_negocio':
+          clientData['businessAge'] as String? ?? 'Por registrar',
+      'tenencia_local': clientData['premises'] as String? ?? 'Por evaluar',
+      'calificacion_sbs': clientData['sbsRating'] as String? ?? 'Por evaluar',
+      'deuda_total': clientData['totalDebt'] as String? ?? '0',
+      'score_preliminar': clientData['preScore'] as int? ?? 0,
+      'segmento': clientData['segment'] as String? ?? 'POR EVALUAR',
+      'fecha_renovacion': 'Solicitud nueva',
+      'clientId': _clientId,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    await batch.commit();
+  }
+
   Future<List<OperationHistoryItem>> getOperations() async {
     final firestore = _firestore;
     if (firestore == null) return OperationsMockData.history;
@@ -445,6 +548,187 @@ class FinancialFirestoreService {
         status: data['status'] as String? ?? 'Exitosa',
       );
     }).toList();
+  }
+
+  List<ServiceBill> _defaultServiceBills() {
+    return [
+      ServiceBill(
+        id: 'aqua_peru',
+        type: 'Agua',
+        companyName: 'AquaPerú',
+        amount: 45,
+        dueDate: _nextDueDate(day: 18),
+        allowRepeatedPayments: true,
+      ),
+      ServiceBill(
+        id: 'electro_andes',
+        type: 'Luz',
+        companyName: 'ElectroAndes',
+        amount: 78,
+        dueDate: _nextDueDate(day: 20),
+        allowRepeatedPayments: false,
+      ),
+      ServiceBill(
+        id: 'net_sur',
+        type: 'Internet',
+        companyName: 'NetSur',
+        amount: 89.90,
+        dueDate: _nextDueDate(day: 25),
+        allowRepeatedPayments: false,
+      ),
+    ];
+  }
+
+  DateTime _nextDueDate({required int day}) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final dueDate = DateTime(now.year, now.month, day);
+    if (dueDate.isBefore(today)) return DateTime(now.year, now.month + 1, day);
+    return dueDate;
+  }
+
+  Future<List<ServiceBill>> getServiceBills() async {
+    final firestore = _firestore;
+    final bills = _defaultServiceBills();
+    if (firestore == null) return bills;
+
+    final snapshot = await firestore
+        .collection('clients')
+        .doc(_clientId)
+        .collection('serviceBills')
+        .get();
+    final stateById = {for (final doc in snapshot.docs) doc.id: doc.data()};
+
+    return bills.map((bill) {
+      final state = stateById[bill.id];
+      final isPaid = state == null ? false : _isCurrentBillPaid(bill, state);
+      return bill.copyWith(isPaid: isPaid);
+    }).toList();
+  }
+
+  bool _isCurrentBillPaid(ServiceBill bill, Map<String, dynamic> state) {
+    if (bill.allowRepeatedPayments) return false;
+
+    final isPaid = state['isPaid'] as bool? ?? false;
+    if (!isPaid) return false;
+
+    final paidBillingPeriod = state['paidBillingPeriod'] as String?;
+    if (paidBillingPeriod != null) {
+      return paidBillingPeriod == bill.billingPeriod;
+    }
+
+    final paidDueDate = state['dueDate'] as String?;
+    return paidDueDate == bill.dueDateLabel;
+  }
+
+  Future<List<ServiceNotification>> getServiceNotifications() async {
+    final bills = await getServiceBills();
+    return bills
+        .where((bill) => !bill.isPaid || bill.allowRepeatedPayments)
+        .map((bill) {
+          final title = bill.isDueSoon
+              ? '${bill.type} próximo a vencer'
+              : '${bill.type} pendiente de pago';
+          return ServiceNotification(
+            title: title,
+            message:
+                '${bill.companyName} vence el ${bill.dueDateLabel} por S/ ${bill.amount.toStringAsFixed(2)}.',
+            iconName: bill.type,
+          );
+        })
+        .toList();
+  }
+
+  Future<void> payServiceBill(ServiceBill bill) async {
+    final firestore = _firestore;
+    if (firestore == null) return;
+    if (!bill.canPay) {
+      throw AppException('${bill.companyName} ya fue pagado.');
+    }
+
+    await ensureClientFinancialProfile();
+
+    final clientRef = firestore.collection('clients').doc(_clientId);
+    final savingsRef = clientRef.collection('savings').doc('main');
+    final serviceBillRef = clientRef.collection('serviceBills').doc(bill.id);
+    final operationsRef = clientRef.collection('operations').doc();
+    final movementsRef = clientRef.collection('movements').doc();
+
+    await firestore.runTransaction((transaction) async {
+      final clientDoc = await transaction.get(clientRef);
+      final savingsDoc = await transaction.get(savingsRef);
+      final serviceBillDoc = await transaction.get(serviceBillRef);
+      final clientData = clientDoc.data() ?? {};
+      final savingsData = savingsDoc.data() ?? {};
+      final serviceBillData = serviceBillDoc.data() ?? {};
+      final alreadyPaid = _isCurrentBillPaid(bill, serviceBillData);
+
+      if (!bill.allowRepeatedPayments && alreadyPaid) {
+        throw AppException('${bill.companyName} ya fue pagado.');
+      }
+
+      final availableBalance =
+          savingsData['balance'] as num? ??
+          clientData['savingsBalance'] as num? ??
+          initialBalance;
+      if (availableBalance < bill.amount) {
+        throw const AppException(
+          'Saldo insuficiente para realizar la operación.',
+        );
+      }
+
+      final piggyBankBalance =
+          savingsData['piggyBankBalance'] as num? ??
+          clientData['piggyBankBalance'] as num? ??
+          0;
+      final newAvailableBalance = availableBalance - bill.amount;
+      final newTotalBalance = newAvailableBalance + piggyBankBalance;
+      final title = 'Pago ${bill.companyName}';
+
+      transaction.set(clientRef, {
+        'totalBalance': newTotalBalance,
+        'savingsBalance': newAvailableBalance,
+        'piggyBankBalance': piggyBankBalance,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      transaction.set(savingsRef, {
+        'balance': newAvailableBalance,
+        'piggyBankBalance': piggyBankBalance,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      transaction.set(serviceBillRef, {
+        'companyName': bill.companyName,
+        'type': bill.type,
+        'amount': bill.amount,
+        'dueDate': bill.dueDateLabel,
+        'paidBillingPeriod': bill.billingPeriod,
+        'isPaid': !bill.allowRepeatedPayments,
+        'lastPaidAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      transaction.set(operationsRef, {
+        'type': title,
+        'amount': bill.amount,
+        'status': 'Exitosa',
+        'date': _today,
+        'createdAt': FieldValue.serverTimestamp(),
+        'serviceId': bill.id,
+        'serviceType': bill.type,
+        'companyName': bill.companyName,
+        'dueDate': bill.dueDateLabel,
+      });
+      transaction.set(movementsRef, {
+        'title': title,
+        'amount': bill.amount,
+        'date': _today,
+        'isIncome': false,
+        'createdAt': FieldValue.serverTimestamp(),
+        'serviceId': bill.id,
+        'serviceType': bill.type,
+        'companyName': bill.companyName,
+        'dueDate': bill.dueDateLabel,
+      });
+    });
   }
 
   OperationContact _contactFromData(
@@ -551,7 +835,6 @@ class FinancialFirestoreService {
   Future<void> recordContactTransfer({
     required OperationContact contact,
     required num amount,
-    required String description,
   }) async {
     final firestore = _firestore;
     if (firestore == null) return;
@@ -583,7 +866,10 @@ class FinancialFirestoreService {
       throw const AppException('El contacto seleccionado no existe.');
     }
 
-    final currentBalance = senderData['totalBalance'] as num? ?? initialBalance;
+    final currentBalance =
+        senderData['savingsBalance'] as num? ??
+        senderData['totalBalance'] as num? ??
+        initialBalance;
     if (currentBalance < amount) {
       throw const AppException(
         'Saldo insuficiente para realizar la operación.',
@@ -597,7 +883,6 @@ class FinancialFirestoreService {
     final newSenderBalance = currentBalance - amount;
     final newRecipientBalance = recipientBalance + amount;
     final newRecipientSavingsBalance = recipientSavingsBalance + amount;
-    final cleanDescription = description.trim();
     final batch = firestore.batch();
 
     batch.update(senderRef, {
@@ -628,7 +913,6 @@ class FinancialFirestoreService {
       'createdAt': FieldValue.serverTimestamp(),
       'recipientId': contact.id,
       'recipientName': contact.fullName,
-      'description': cleanDescription,
     });
     batch.set(senderMovementRef, {
       'title': 'Transferencia a ${contact.fullName}',
@@ -638,7 +922,6 @@ class FinancialFirestoreService {
       'createdAt': FieldValue.serverTimestamp(),
       'recipientId': contact.id,
       'recipientName': contact.fullName,
-      'description': cleanDescription,
     });
     batch.set(recipientMovementRef, {
       'title': 'Depósito de usuario',
@@ -647,7 +930,6 @@ class FinancialFirestoreService {
       'isIncome': true,
       'createdAt': FieldValue.serverTimestamp(),
       'senderId': _clientId,
-      'description': cleanDescription,
     });
     await batch.commit().timeout(const Duration(seconds: 12));
   }
@@ -673,7 +955,10 @@ class FinancialFirestoreService {
     await firestore.runTransaction((transaction) async {
       final clientDoc = await transaction.get(clientRef);
       final data = clientDoc.data() ?? {};
-      final currentBalance = data['totalBalance'] as num? ?? initialBalance;
+      final currentBalance =
+          data['savingsBalance'] as num? ??
+          data['totalBalance'] as num? ??
+          initialBalance;
       if (currentBalance < amount) {
         throw const AppException(
           'Saldo insuficiente para realizar la operación.',

@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import '../../../app/routes/route_names.dart';
 import '../../../core/errors/app_exception.dart';
 import '../../../core/services/financial_firestore_service.dart';
-import '../../../core/utils/validators.dart';
 import '../../../core/widgets/app_button.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../domain/entities/operation_contact.dart';
@@ -21,7 +20,6 @@ class TransferScreen extends StatefulWidget {
 class _TransferScreenState extends State<TransferScreen> {
   final _formKey = GlobalKey<FormState>();
   final _amountController = TextEditingController();
-  final _descriptionController = TextEditingController();
   OperationContact? _contact;
   bool _isSaving = false;
   bool _loadedArguments = false;
@@ -29,7 +27,6 @@ class _TransferScreenState extends State<TransferScreen> {
   @override
   void dispose() {
     _amountController.dispose();
-    _descriptionController.dispose();
     super.dispose();
   }
 
@@ -45,7 +42,24 @@ class _TransferScreenState extends State<TransferScreen> {
     _loadedArguments = true;
   }
 
+  num? _parseAmount(String value) {
+    final raw = value.trim();
+    if (raw.isEmpty) return null;
+    final normalized = raw.contains(',')
+        ? raw.replaceAll('.', '').replaceAll(',', '.')
+        : raw.replaceAll(',', '');
+    return num.tryParse(normalized);
+  }
+
+  String? _validateAmount(String? value) {
+    final amount = _parseAmount(value ?? '');
+    if (amount == null) return 'Ingresa un monto numérico válido.';
+    if (amount <= 0) return 'El monto debe ser mayor a cero.';
+    return null;
+  }
+
   Future<void> _confirm() async {
+    if (_isSaving) return;
     if (!_formKey.currentState!.validate()) return;
     final contact = _contact;
     if (contact == null) {
@@ -55,20 +69,13 @@ class _TransferScreenState extends State<TransferScreen> {
       return;
     }
 
-    final amount = num.tryParse(_amountController.text.replaceAll(',', '.'));
-    if (amount == null || amount <= 0) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Ingresa un monto válido.')));
-      return;
-    }
+    final amount = _parseAmount(_amountController.text)!;
 
     setState(() => _isSaving = true);
     try {
       await FinancialFirestoreService.instance.recordContactTransfer(
         contact: contact,
         amount: amount,
-        description: _descriptionController.text,
       );
 
       if (!mounted) return;
@@ -120,14 +127,10 @@ class _TransferScreenState extends State<TransferScreen> {
             AppTextField(
               label: 'Monto',
               controller: _amountController,
-              keyboardType: TextInputType.number,
-              validator: (value) =>
-                  Validators.required(value, fieldName: 'Monto'),
-            ),
-            const SizedBox(height: 16),
-            AppTextField(
-              label: 'Descripción',
-              controller: _descriptionController,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              validator: _validateAmount,
             ),
             const SizedBox(height: 24),
             AppButton(

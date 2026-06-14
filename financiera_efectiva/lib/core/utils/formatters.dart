@@ -2,7 +2,10 @@ class Formatters {
   const Formatters._();
 
   static String currency(num value) {
-    final raw = value.round().toString();
+    final hasDecimals = value % 1 != 0;
+    final fixedValue = hasDecimals ? value.toStringAsFixed(2) : value.round().toString();
+    final parts = fixedValue.split('.');
+    final raw = parts.first;
     final buffer = StringBuffer();
     for (var i = 0; i < raw.length; i++) {
       final reversedIndex = raw.length - i;
@@ -11,6 +14,7 @@ class Formatters {
         buffer.write('.');
       }
     }
-    return 'S/ ${buffer.toString()}';
+    final decimals = hasDecimals ? '.${parts.last}' : '';
+    return 'S/ ${buffer.toString()}$decimals';
   }
 }
